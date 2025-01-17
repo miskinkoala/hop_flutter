@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart'; // Import this for FilteringTextInputFormatter
+import 'package:flutter/material.dart';
 
 class PaymentPage extends StatefulWidget {
   const PaymentPage({Key? key}) : super(key: key);
@@ -25,7 +26,7 @@ class _PaymentPageState extends State<PaymentPage> {
     const String url = 'http://209.38.227.170:3000/users/topupBalance'; // Update to your API URL
 
     SharedPreferences prefs3 = await SharedPreferences.getInstance();
-    String userId = prefs3.getString('id')!; // Throws an error if `id` is null
+    String userId = prefs3.getString('id')!; // Throws an error if id is null
 
     Map<String, String> body = {
       '_id': userId,
@@ -94,22 +95,49 @@ class _PaymentPageState extends State<PaymentPage> {
   }
 
   // Function to handle Expiration Date formatting (MM/YYYY)
-  void handleExpDate(String value) {
-    // Ensure the input stops after the correct number of characters (MM/YYYY)
-    if (value.length > 7) return; // Stop any input once the length exceeds 7 characters (MM/YYYY)
+void handleExpDate(String value) {
+  // Ensure the input stops after the correct number of characters (MM/YYYY)
+  if (value.length > 7) return; // Stop any input once the length exceeds 7 characters (MM/YYYY)
 
-    if (value.length == 2 && !value.contains('/')) {
+  // Add a '/' after the month (MM) part
+  if (value.length == 2 && !value.contains('/')) {
+    if (int.tryParse(value) != null && int.parse(value) <= 12) { // Check if the month is valid
       setState(() {
         _expDateController.text = value + '/';
         _expDateController.selection = TextSelection.collapsed(offset: _expDateController.text.length); // Place cursor at the end
       });
-    } else if (value.length == 5 && value[2] != '/') {
+    }
+  } 
+  // Correct the position of the '/' if it's missing (e.g., from 'MMDD' to 'MM/DD')
+  else if (value.length == 7 && value[2] != '/') {
+    setState(() {
+      _expDateController.text = value.substring(0, 2) + '/' + value.substring(3);
+      _expDateController.selection = TextSelection.collapsed(offset: _expDateController.text.length); // Place cursor at the end
+    });
+  }
+  // Ensure that the input is still in the correct format (MM/YYYY)
+  else if (value.length == 7) {
+    // Validate year format (YYYY)
+    final yearPart = value.substring(3);
+    if (int.tryParse(yearPart) != null && yearPart.length == 4) {
       setState(() {
-        _expDateController.text = value.substring(0, 2) + '/' + value.substring(3);
         _expDateController.selection = TextSelection.collapsed(offset: _expDateController.text.length); // Place cursor at the end
       });
     }
   }
+
+  // Block typing after the full expiration date (MM/YYYY) is entered (4 digits for the year)
+  if (value.length == 7) {
+    setState(() {
+      // No further input allowed
+      _expDateController.text = value.substring(0, 7); // Keeps text as-is, no further edits allowed
+      _expDateController.selection = TextSelection.collapsed(offset: _expDateController.text.length); // Place cursor at the end
+    });
+  }
+}
+
+
+
 
   // Function to validate the CVV input
   String? validateCvv(String value) {
@@ -227,19 +255,21 @@ class _PaymentPageState extends State<PaymentPage> {
                   ),
                   SizedBox(height: 16),
 
-                  // Expiration Date Input
                   TextField(
-                    controller: _expDateController,
-                    decoration: InputDecoration(
-                      labelText: 'Exp. Date',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    keyboardType: TextInputType.number,
-                    onChanged: handleExpDate,
-                  ),
-                  SizedBox(height: 16),
+  controller: _expDateController,
+  decoration: InputDecoration(
+    labelText: 'Exp. Date',
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(8),
+    ),
+  ),
+  keyboardType: TextInputType.number,
+  onChanged: handleExpDate, // Handle changes for expiration date
+  inputFormatters: [
+    LengthLimitingTextInputFormatter(7), // This ensures no more than 7 characters
+  ],
+),
+SizedBox(height: 16),
                   // CVV Input (Hidden Digits) with TextFormField instead of TextField
                   TextFormField(
                     controller: _cvvController,
@@ -307,12 +337,21 @@ class _PaymentPageState extends State<PaymentPage> {
                               String expDate = _expDateController.text;
                               String cvv = _cvvController.text;
 
-                              if (amount.isEmpty || cardNumber.isEmpty || name.isEmpty || expDate.isEmpty || cvv.isEmpty) {
+                              if (amount.isEmpty || cardNumber.isEmpty || name.isEmpty || expDate.isEmpty || cvv.isEmpty || cardNumber.length < 16) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(content: Text('Please fill in all fields')),
                                 );
+                              
                                 return;
                               }
+
+                              else if(int.parse(expDate.substring(3))<= DateTime.now().year){
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Your card is expired')),
+                                );
+                              
+                                return;
+                              }  
 
                               // Call the top-up function
                               topUpBalance(amount, cardNumber, name, expDate, cvv);
@@ -341,7 +380,7 @@ class _PaymentPageState extends State<PaymentPage> {
             ),
           ],
         ),
-      ),
-    );
-  }
+      ),
+    );
+  }
 }
